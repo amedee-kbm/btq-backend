@@ -2,6 +2,7 @@
 __pycache__/
 *.py[oc]
 *.sqlite3
+media/
 .coverage
 htmlcov/
 .pytest_cache/
@@ -24,3 +25,5 @@ wheels/
 .idea/
 .DS_Store
 Thumbs.db
+# collectstatic output
+staticfiles/

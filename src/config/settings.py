@@ -26,12 +26,24 @@ if env_file.exists():
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-(5@+x-=58pfveo57h#zuk0(#r6iiy5m#a(f4+g^sz!mgxqdtv-"
+SECRET_KEY = env.str(
+    "SECRET_KEY",
+    default="django-insecure-(5@+x-=58pfveo57h#zuk0(#r6iiy5m#a(f4+g^sz!mgxqdtv-",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool("DEBUG", default=True)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+
+# Render sets this to the service's public hostname, e.g. btq-backend.onrender.com
+RENDER_EXTERNAL_HOSTNAME = env.str("RENDER_EXTERNAL_HOSTNAME", default="")
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 
 
 # Application definition
@@ -47,11 +59,13 @@ INSTALLED_APPS = [
     "ninja_extra",
     "ninja_jwt",
     "accounts",
+    "catalog",
     "api",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -89,12 +103,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Falls back to the local SQLite file when DATABASE_URL is not set.
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": env.db("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
 }
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=60)
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 
 # Password validation
@@ -134,3 +148,57 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# User-uploaded files (product and category images)
+
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# Uploads go to Cloudflare R2 (S3-compatible) when R2_BUCKET_NAME is set,
+# otherwise to MEDIA_ROOT on the local disk.
+R2_BUCKET_NAME = env.str("R2_BUCKET_NAME", default="")
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        if not DEBUG
+        else "django.contrib.staticfiles.storage.StaticFilesStorage"
+    },
+}
+
+if R2_BUCKET_NAME:
+    STORAGES["default"] = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": R2_BUCKET_NAME,
+            "endpoint_url": f"https://{env.str('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com",
+            "access_key": env.str("R2_ACCESS_KEY_ID"),
+            "secret_key": env.str("R2_SECRET_ACCESS_KEY"),
+            "region_name": "auto",
+            "signature_version": "s3v4",
+            # Serve files from the bucket's public URL instead of signed links.
+            "custom_domain": env.str("R2_PUBLIC_DOMAIN"),
+            "querystring_auth": False,
+            "file_overwrite": False,
+        },
+    }
+
+
+# Production hardening (applies whenever DEBUG is off)
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=0)
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": env.str("LOG_LEVEL", default="INFO")},
+}

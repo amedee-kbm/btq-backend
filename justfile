@@ -19,3 +19,6 @@ shell:
 format:
   uv run ruff format
 
+createsuperuser:
+  cd src && uv run python manage.py createsuperuser
+
