@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import environ
+from datetime import timedelta
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -60,6 +61,7 @@ INSTALLED_APPS = [
     "ninja_jwt",
     "accounts",
     "catalog",
+    "store",
     "api",
 ]
 
@@ -131,6 +133,14 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTH_USER_MODEL = "accounts.User"
 
+# Refresh tokens rotate on every refresh, so a shopper active within 30 days stays logged in.
+NINJA_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": False,
+}
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -195,6 +205,10 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=0)
     SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Frontend cache revalidation webhook (disabled when the URL is unset).
+FRONTEND_REVALIDATE_URL = env.str("FRONTEND_REVALIDATE_URL", default="")
+REVALIDATE_SECRET = env.str("REVALIDATE_SECRET", default="")
 
 LOGGING = {
     "version": 1,

@@ -1,0 +1,11 @@
+### All products (newest, sold-out last)
+GET http://127.0.0.1:8000/api/products
+
+### Filters, search, sort, paging
+GET http://127.0.0.1:8000/api/products?category=dresses&tag=wedding-guest&size=M&color=Emerald&min_price=10000&max_price=30000&on_sale=true&in_stock=true&sort=price_asc&page=1&page_size=24
+
+### Search by product code
+GET http://127.0.0.1:8000/api/products?q=BQ-0142
+
+### Product detail
+GET http://127.0.0.1:8000/api/products/emerald-satin-maxi

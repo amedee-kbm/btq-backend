@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.db.models import Count, Exists, OuterRef
 from django.utils.html import format_html
 
+from . import revalidate
+
 from .models import (
     Category,
     Collection,
@@ -143,11 +145,13 @@ class ProductAdmin(admin.ModelAdmin):
     @admin.action(description="Publish selected products")
     def publish(self, request, queryset):
         count = queryset.update(is_published=True)
+        revalidate.schedule("catalog")  # update() skips post_save signals
         self.message_user(request, f"{count} product(s) published.")
 
     @admin.action(description="Unpublish selected products")
     def unpublish(self, request, queryset):
         count = queryset.update(is_published=False)
+        revalidate.schedule("catalog")  # update() skips post_save signals
         self.message_user(request, f"{count} product(s) unpublished.")
 
 

@@ -1,0 +1,7 @@
+### Returns a new access AND refresh token (rotation)
+POST http://127.0.0.1:8000/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh": "paste-refresh-token-from-login.rest"
+}

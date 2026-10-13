@@ -27,3 +27,7 @@ services:
         sync: false
       - key: R2_PUBLIC_DOMAIN
         sync: false
+      - key: FRONTEND_REVALIDATE_URL
+        sync: false
+      - key: REVALIDATE_SECRET
+        sync: false

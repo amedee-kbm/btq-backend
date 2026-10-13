@@ -1,0 +1,13 @@
+@token = paste-access-token-from-login.rest
+
+### List favorites
+GET http://127.0.0.1:8000/api/me/favorites
+Authorization: Bearer {{token}}
+
+### Add (idempotent)
+PUT http://127.0.0.1:8000/api/me/favorites/emerald-satin-maxi
+Authorization: Bearer {{token}}
+
+### Remove
+DELETE http://127.0.0.1:8000/api/me/favorites/emerald-satin-maxi
+Authorization: Bearer {{token}}

@@ -1,0 +1,4 @@
+GET http://127.0.0.1:8000/api/collections
+
+### Collection with its products
+GET http://127.0.0.1:8000/api/collections/new-arrivals?page=1&page_size=24
