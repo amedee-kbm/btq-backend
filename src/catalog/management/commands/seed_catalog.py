@@ -647,6 +647,26 @@ PRODUCTS = [
         images=[(62, None)],
         sizes=KNIT_SIZES,
     ),
+    dict(
+        name="Jacquard Button-Front Shirt Maxi Dress",
+        cat="maxi",
+        price=45000,
+        material="Textured jacquard",
+        fit="Fitted waist, full skirt",
+        tags=["Church", "Office", "Wedding guest"],
+        colors=["Lemon"],
+        images=[(68, "Lemon")],
+    ),
+    dict(
+        name="Oversized Linen Shirt & Wide-Leg Set",
+        cat="trouser-sets",
+        price=45000,
+        material="Linen blend",
+        fit="Relaxed",
+        tags=["Office", "Weekend", "Church"],
+        colors=["Brown", "Burgundy", "Navy"],
+        images=[(69, None)],
+    ),
 ]
 
 NEW_ARRIVALS = 12

@@ -97,13 +97,15 @@ class ProductAdmin(admin.ModelAdmin):
         "updated_at",
     ]
     list_display_links = ["code", "name"]
-    list_editable = ["is_published"]
+    list_editable = ["price", "sale_price", "is_published"]
     list_filter = ["is_published", OnSaleFilter, SoldOutFilter, "categories", "tags"]
-    search_fields = ["code", "name"]
+    list_per_page = 50
+    search_fields = ["code", "name", "material", "categories__name", "tags__name"]
+    save_on_top = True
     prepopulated_fields = {"slug": ("name",)}
     filter_horizontal = ["categories", "tags"]
     readonly_fields = ["created_at", "updated_at"]
-    actions = ["publish", "unpublish"]
+    actions = ["publish", "unpublish", "mark_sold_out", "mark_available", "end_sale"]
     inlines = [VariantInline, ProductImageInline]
     fieldsets = [
         ("Basics", {"fields": ["name", "slug", "code", "is_published"]}),
@@ -153,6 +155,24 @@ class ProductAdmin(admin.ModelAdmin):
         count = queryset.update(is_published=False)
         revalidate.schedule("catalog")  # update() skips post_save signals
         self.message_user(request, f"{count} product(s) unpublished.")
+
+    @admin.action(description="Mark selected products sold out (all variants)")
+    def mark_sold_out(self, request, queryset):
+        count = Variant.objects.filter(product__in=queryset).update(is_available=False)
+        revalidate.schedule("catalog")  # update() skips post_save signals
+        self.message_user(request, f"{count} variant(s) marked unavailable.")
+
+    @admin.action(description="Mark selected products available (all variants)")
+    def mark_available(self, request, queryset):
+        count = Variant.objects.filter(product__in=queryset).update(is_available=True)
+        revalidate.schedule("catalog")  # update() skips post_save signals
+        self.message_user(request, f"{count} variant(s) marked available.")
+
+    @admin.action(description="End sale on selected products")
+    def end_sale(self, request, queryset):
+        count = queryset.filter(sale_price__isnull=False).update(sale_price=None)
+        revalidate.schedule("catalog")  # update() skips post_save signals
+        self.message_user(request, f"Sale ended on {count} product(s).")
 
 
 # --- Category / Collection -------------------------------------------------
@@ -205,9 +225,11 @@ class CollectionProductInline(admin.TabularInline):
 
 @admin.register(Collection)
 class CollectionAdmin(admin.ModelAdmin):
-    list_display = ["name", "is_active", "position", "product_count"]
+    list_display = ["name", "description", "is_active", "position", "product_count"]
     list_editable = ["is_active", "position"]
+    list_filter = ["is_active"]
     search_fields = ["name"]
+    save_on_top = True
     prepopulated_fields = {"slug": ("name",)}
     inlines = [CollectionProductInline]
 
@@ -248,12 +270,14 @@ class TagAdmin(admin.ModelAdmin):
 class SizeAdmin(admin.ModelAdmin):
     list_display = ["name", "position"]
     list_editable = ["position"]
+    search_fields = ["name"]
 
 
 @admin.register(Color)
 class ColorAdmin(admin.ModelAdmin):
-    list_display = ["name", "hex_code", "swatch"]
-    search_fields = ["name"]
+    list_display = ["name", "swatch", "hex_code"]
+    list_editable = ["hex_code"]
+    search_fields = ["name", "hex_code"]
 
     @admin.display(description="Swatch")
     def swatch(self, obj):
@@ -275,6 +299,7 @@ class FavoriteAdmin(admin.ModelAdmin):
 
     list_display = ["user", "product", "created_at"]
     list_filter = ["created_at"]
+    date_hierarchy = "created_at"
     list_select_related = ["user", "product"]
     search_fields = ["user__email", "product__code", "product__name"]
 
