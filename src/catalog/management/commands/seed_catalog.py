@@ -1,18 +1,27 @@
-"""Seed the catalog with the Zita Boutique launch range.
+"""Seed the catalog with the Zita Boutique range.
 
-    uv run python manage.py seed_catalog <photos-dir>
+    uv run python manage.py seed_catalog <photos-dir> [--wipe]
 
-<photos-dir> holds the numbered shots (1.jpg ... 67.jpg). Products are keyed
-by code, so re-running updates them in place; pass --replace-images to
-re-upload photos for products that already have some.
+<photos-dir> holds the shots named like "Long dress 25k_(1).jpg": the product
+name and price come from the file name. Shots without a price ("Finished_*",
+"Sold out", raw WhatsApp exports) are seeded as unpublished drafts with price 0
+so they can be priced in the admin; "Finished"/"Sold out" ones are also marked
+unavailable.
+
+Products are keyed by code, so re-running updates them in place and skips
+photos already uploaded (--replace-images re-uploads them). --wipe first
+deletes every product (and its photos) and any category or collection this
+seed doesn't define.
 """
 
 import io
+import re
+import time
 from pathlib import Path
 
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import OperationalError, connection, transaction
 from django.utils.text import slugify
 from PIL import Image, ImageOps
 
@@ -73,14 +82,21 @@ COLORS = {
 CATEGORIES = [
     ("Dresses", None, 0),
     ("Completes", None, 1),
-    ("Evening", "dresses", 0),
-    ("Midi", "dresses", 1),
-    ("Maxi", "dresses", 2),
-    ("Casual", "dresses", 3),
-    ("Denim", "dresses", 4),
+    ("Boubous", None, 2),
+    ("Knitwear", None, 3),
+    ("Tops & Bottoms", None, 4),
+    ("Long", "dresses", 0),
+    ("Short", "dresses", 1),
+    ("Party", "dresses", 2),
+    ("Office", "dresses", 3),
+    ("Satin", "dresses", 4),
+    ("Summer", "dresses", 5),
+    ("Denim", "dresses", 6),
     ("Trouser Sets", "completes", 0),
-    ("Knit Sets", "completes", 1),
-    ("Print Sets", "completes", 2),
+    ("Print Sets", "completes", 1),
+    ("Knit Sets", "completes", 2),
+    ("Suits", "completes", 3),
+    ("Jumpsuits", "completes", 4),
 ]
 
 TAGS = [
@@ -97,579 +113,147 @@ TAGS = [
 ]
 
 DRESS_SIZES = ["S", "M", "L", "XL", "XXL"]
-KNIT_SIZES = ["Free size"]
+FREE_SIZE = ["Free size"]
 
-# images: (file number, color name or None for a shared/collage shot)
+# Each entry is one product. files: its shots, first one is the cover; name and
+# price come from the first file name unless given. colors are read off the
+# photos. finished=True marks a sold-out shot.
 PRODUCTS = [
     # --- Dresses ---
-    dict(
-        name="Satin Halter Mermaid Gown",
-        cat="evening",
-        price=55000,
-        material="Satin",
-        fit="Fitted through the hips",
-        tags=["Wedding guest", "Party", "Satin"],
-        colors=["Burgundy"],
-        images=[(1, "Burgundy")],
-    ),
-    dict(
-        name="Floral Tie-Back Skater Dress",
-        cat="casual",
-        price=28000,
-        material="Cotton blend",
-        tags=["Weekend", "Party"],
-        colors=["Multicolor"],
-        images=[(2, "Multicolor")],
-    ),
-    dict(
-        name="Gold Ring Ruched Midi Dress",
-        cat="midi",
-        price=38000,
-        material="Stretch jersey",
-        fit="Stretchy",
-        tags=["Party", "Wedding guest"],
-        colors=["Red", "Plum"],
-        images=[(3, "Red"), (4, "Plum")],
-    ),
-    dict(
-        name="Asymmetric Strap Maxi Dress",
-        cat="evening",
-        price=42000,
-        material="Stretch knit",
-        tags=["Party", "Wedding guest"],
-        colors=["Red", "Navy", "Lemon"],
-        images=[(5, None)],
-    ),
-    dict(
-        name="Off-Shoulder Drape Mermaid Dress",
-        cat="evening",
-        price=48000,
-        material="Crepe",
-        fit="Fitted through the hips",
-        tags=["Party", "Wedding guest"],
-        colors=["Black"],
-        images=[(6, "Black")],
-    ),
-    dict(
-        name="One-Shoulder Ruched Slit Maxi",
-        cat="evening",
-        price=40000,
-        sale=34000,
-        material="Satin",
-        tags=["Party", "Satin"],
-        colors=["Brown", "Cream", "Mustard", "Orange", "Pink", "Black"],
-        images=[(7, None)],
-    ),
-    dict(
-        name="Gold Ring One-Shoulder Mini Dress",
-        cat="evening",
-        price=32000,
-        material="Stretch jersey",
-        fit="Runs small",
-        tags=["Party"],
-        colors=["Red", "Brown", "Black"],
-        images=[(8, None)],
-    ),
-    dict(
-        name="Halter Flower Appliqué Swing Dress",
-        cat="casual",
-        price=30000,
-        material="Chiffon",
-        tags=["Weekend"],
-        colors=["Sky Blue"],
-        images=[(9, "Sky Blue")],
-    ),
-    dict(
-        name="Wrap-Front Draped Satin Maxi",
-        cat="evening",
-        price=45000,
-        material="Satin",
-        tags=["Wedding guest", "Satin"],
-        colors=["Mustard", "Brown", "Champagne", "Pink", "Black", "Royal Blue"],
-        images=[(10, None)],
-    ),
-    dict(
-        name="Cowl-Neck Ruched Satin Maxi",
-        cat="evening",
-        price=42000,
-        material="Satin",
-        tags=["Wedding guest", "Satin"],
-        colors=["Pink", "Teal", "Red", "Brown", "Olive", "Black", "Champagne"],
-        images=[(11, None)],
-    ),
-    dict(
-        name="Balloon-Sleeve Satin Wrap Dress",
-        cat="evening",
-        price=46000,
-        sale=39000,
-        material="Satin",
-        tags=["Wedding guest", "Church", "Satin"],
-        colors=["Blush", "Mustard", "Lime", "Champagne", "Black", "Red", "Brown"],
-        images=[(12, None)],
-    ),
-    dict(
-        name="Cowl-Neck Lace-Up Back Satin Gown",
-        cat="evening",
-        price=52000,
-        material="Satin",
-        tags=["Party", "Wedding guest", "Satin"],
-        colors=["Lime"],
-        images=[(13, "Lime")],
-    ),
-    dict(
-        name="Bow-Neck Lace Pencil Dress",
-        cat="midi",
-        price=45000,
-        material="Lace",
-        tags=["Church", "Office", "Lace"],
-        colors=["White", "Pink", "Sky Blue", "Black"],
-        images=[(14, None)],
-    ),
-    dict(
-        name="Embellished Puff-Sleeve Pencil Dress",
-        cat="midi",
-        price=42000,
-        material="Crepe",
-        tags=["Church", "Office"],
-        colors=["White", "Sky Blue", "Black", "Pink", "Navy", "Mint"],
-        images=[(15, None)],
-    ),
-    dict(
-        name="Side-Ruched Three-Quarter Sleeve Maxi",
-        cat="maxi",
-        price=36000,
-        material="Crepe",
-        tags=["Church", "Office"],
-        colors=["Beige", "Red", "Sky Blue", "Navy", "Green"],
-        images=[(16, None)],
-    ),
-    dict(
-        name="Bow-Collar Lace Midi Dress",
-        cat="midi",
-        price=44000,
-        material="Lace",
-        tags=["Church", "Lace"],
-        colors=["Fuchsia", "White", "Black", "Pink", "Beige"],
-        images=[(17, None)],
-    ),
-    dict(
-        name="Off-Shoulder Puff-Sleeve Lace Midi",
-        cat="midi",
-        price=48000,
-        material="Lace",
-        tags=["Wedding guest", "Lace"],
-        colors=["Pink", "Black", "White", "Mauve"],
-        images=[(18, None)],
-    ),
-    dict(
-        name="Square-Neck Ruffle-Sleeve Lace Midi",
-        cat="midi",
-        price=48000,
-        material="Lace",
-        tags=["Wedding guest", "Church", "Lace"],
-        colors=["Mauve", "Pink", "Black", "White"],
-        images=[(19, None)],
-    ),
-    dict(
-        name="V-Neck Sheer-Sleeve Lace Midi",
-        cat="midi",
-        price=48000,
-        material="Lace",
-        tags=["Wedding guest", "Lace"],
-        colors=["Pink", "Black", "White", "Mauve"],
-        images=[(20, None)],
-    ),
-    dict(
-        name="Beaded Sheer-Sleeve Column Dress",
-        cat="maxi",
-        price=50000,
-        material="Crepe with mesh sleeves",
-        tags=["Wedding guest", "Church"],
-        colors=["Sky Blue", "Red", "Royal Blue", "Black", "White", "Green"],
-        images=[(21, None)],
-    ),
-    dict(
-        name="Button-Front Belted Shirt Dress",
-        cat="casual",
-        price=30000,
-        material="Crepe",
-        tags=["Office", "Weekend", "Plus size"],
-        colors=["Mustard", "Orange", "White", "Black", "Lime"],
-        images=[(22, None)],
-    ),
-    dict(
-        name="Ruffle-Sleeve Tiered Shirt Dress",
-        cat="casual",
-        price=30000,
-        material="Crepe",
-        tags=["Weekend", "Church", "Plus size"],
-        colors=["Orange", "Grey", "White", "Red", "Yellow"],
-        images=[(23, None)],
-    ),
-    dict(
-        name="Printed Kaftan Maxi with Headwrap",
-        cat="maxi",
-        price=38000,
-        material="Satin",
-        fit="Loose, one size fits most",
-        tags=["Plus size", "Weekend"],
-        colors=["Black & White"],
-        images=[(24, "Black & White")],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Two-Tone Denim Maxi Dress",
-        cat="denim",
-        price=35000,
-        material="Denim",
-        tags=["Denim", "Weekend", "Plus size"],
-        colors=["Denim"],
-        images=[(25, "Denim")],
-    ),
-    dict(
-        name="Classic Denim Shirt Dress",
-        cat="denim",
-        price=30000,
-        material="Denim",
-        tags=["Denim", "Weekend"],
-        colors=["Denim"],
-        images=[(26, "Denim")],
-    ),
-    dict(
-        name="Denim Pocket Maxi Shirt Dress",
-        cat="denim",
-        price=36000,
-        material="Chambray",
-        tags=["Denim", "Office"],
-        colors=["Denim"],
-        images=[(27, "Denim")],
-    ),
-    dict(
-        name="Distressed Denim Kaftan",
-        cat="denim",
-        price=40000,
-        material="Washed denim",
-        fit="Oversized",
-        tags=["Denim", "Plus size"],
-        colors=["Denim"],
-        images=[(28, "Denim")],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Contrast-Stitch Denim Maxi",
-        cat="denim",
-        price=36000,
-        material="Denim",
-        tags=["Denim", "Weekend", "Plus size"],
-        colors=["Denim"],
-        images=[(29, "Denim")],
-    ),
-    dict(
-        name="Oversized Denim Shirt Dress",
-        cat="denim",
-        price=30000,
-        material="Chambray",
-        fit="Oversized",
-        tags=["Denim", "Weekend", "Plus size"],
-        colors=["Denim"],
-        images=[(30, "Denim")],
-    ),
-    dict(
-        name="Patch-Pocket Belted Denim Dress",
-        cat="denim",
-        price=42000,
-        material="Denim",
-        tags=["Denim", "Party"],
-        colors=["Denim"],
-        images=[(31, "Denim")],
-    ),
-    dict(
-        name="Flutter-Sleeve Button Maxi Dress",
-        cat="maxi",
-        price=32000,
-        material="Crepe",
-        fit="Relaxed",
-        tags=["Church", "Plus size"],
-        colors=["Mustard", "Magenta", "Rust", "Black", "Pink"],
-        images=[(32, None)],
-    ),
-    dict(
-        name="Belted Wrap Maxi Dress",
-        cat="maxi",
-        price=34000,
-        material="Crepe",
-        tags=["Church", "Office"],
-        colors=["Grey", "Yellow", "Green", "Brown"],
-        images=[(33, None)],
-    ),
-    dict(
-        name="Flower-Strap Trapeze Maxi",
-        cat="maxi",
-        price=35000,
-        material="Cotton linen",
-        fit="Loose and flowy",
-        tags=["Weekend", "Plus size"],
-        colors=["Yellow", "Black", "Sky Blue", "White", "Pink"],
-        images=[(34, "Yellow"), (35, "Sky Blue"), (37, None)],
-    ),
-    dict(
-        name="Tiered Ruffle Halter Maxi",
-        cat="maxi",
-        price=38000,
-        material="Chiffon",
-        tags=["Weekend", "Party"],
-        colors=["Yellow"],
-        images=[(36, "Yellow")],
-    ),
-    dict(
-        name="Smocked-Waist Button Maxi Shirt Dress",
-        cat="maxi",
-        price=40000,
-        material="Crepe",
-        tags=["Church", "Plus size"],
-        colors=["Royal Blue"],
-        images=[(66, "Royal Blue")],
-    ),
+    dict(files=["Ceremonial dress 35k.jpg"], cat="long", colors=["Mauve"], tags=["Church", "Wedding guest"]),
+    dict(files=["Ceremony dress 35k.jpg"], cat="long", colors=["Lemon"], tags=["Church", "Wedding guest"]),
+    dict(files=["Classy dress 30k.jpg"], cat="long", colors=["Black", "Brown"], tags=["Church", "Office"]),
+    dict(files=["Long casual dress 25k_.jpg"], cat="long", colors=["Burgundy", "Brown", "Green", "Black"], tags=["Weekend"]),
+    dict(files=["Long dress 25k_(1).jpg"], cat="long", colors=["Sky Blue", "Yellow", "Green", "Brown"], tags=["Church"]),
+    dict(files=["Long dress 25k_(2).jpg"], cat="long", colors=["Red", "Green", "Sky Blue", "Navy", "Yellow"], tags=["Church", "Office"]),
+    dict(files=["Long dress 25k_(3).jpg"], cat="long", colors=["Black & White"], tags=["Weekend"]),
+    dict(files=["Long dress 25k_(4).jpg"], cat="long", colors=["Brown"], tags=["Weekend"]),
+    dict(files=["Long dress 25k_.jpg", "Long dress 25k_(5).jpg"], cat="long", colors=["Mustard", "Magenta", "Rust", "Black", "Pink"], tags=["Church", "Plus size"]),
+    dict(files=["Long dress 30k.jpg"], cat="long", colors=["Mustard"], tags=["Church"]),
+    dict(files=["Long dress cotton 30k.jpg"], name="Long cotton dress", cat="long", colors=["Olive", "Navy", "Cream"], tags=["Weekend", "Office"]),
+    dict(files=["Long straight dress 25k_(1).jpg"], cat="long", colors=["Beige", "Red", "Sky Blue", "Navy", "Green"], tags=["Church", "Office"]),
+    dict(files=["Long straight dress 25k_.jpg"], cat="long", colors=["Sky Blue", "Red", "Royal Blue", "Black", "White", "Green"], tags=["Wedding guest", "Church"]),
+    dict(files=["long top dress 25k.jpg"], cat="long", colors=["Grey", "Burgundy", "Green", "Navy"], tags=["Weekend", "Plus size"], sizes=FREE_SIZE),
+    dict(files=["Petetre 30k.jpg"], cat="long", colors=["Green", "Brown", "Rust", "Black", "Red", "Cream"], tags=["Church", "Office"]),
+    dict(files=["Short casual dress 25k_.jpg"], cat="short", colors=["Black", "White", "Beige"], tags=["Weekend"]),
+    dict(files=["Short dress 25k_(1).jpg"], cat="short", colors=["Orange", "Charcoal", "White", "Red", "Yellow"], tags=["Weekend", "Plus size"]),
+    dict(files=["Short dress 25k_(2).jpg"], cat="short", colors=["Beige", "Black", "White", "Pink"], tags=["Wedding guest", "Lace"]),
+    dict(files=["Short dress 25k_(3).jpg"], cat="short", colors=["Fuchsia", "White", "Black", "Pink", "Beige"], tags=["Church", "Lace"]),
+    dict(files=["Short dress 25k_(4).jpg"], cat="short", colors=["Multicolor"], tags=["Weekend", "Party"]),
+    dict(files=["Short dress 25k_(5).jpg"], cat="short", colors=["White", "Red"], tags=["Party"]),
+    dict(files=["Short dress 25k_.jpg"], cat="short", colors=["Mustard", "Orange", "White", "Black", "Lime"], tags=["Weekend", "Plus size"]),
+    dict(files=["Short mini dress 25k_.jpg"], cat="short", colors=["Olive"], tags=["Weekend"]),
+    dict(files=["Shirt dress 25k_(1).jpg"], cat="short", colors=["Red", "White", "Mustard", "Green", "Fuchsia", "Royal Blue", "Black", "Brown", "Orange"], tags=["Weekend"]),
+    dict(files=["Shirt dress 25k_(2).jpg"], cat="short", colors=["White", "Sky Blue"], tags=["Weekend"]),
+    dict(files=["Shirt dress 25k_.jpg"], cat="short", colors=["Mint", "Beige", "Pink", "Sky Blue", "Orange", "Grey"], tags=["Weekend", "Plus size"]),
+    dict(files=["Party dress 25k_(1).jpg"], cat="party", colors=["Yellow"], tags=["Party"]),
+    dict(files=["Party dress 25k_(2).jpg"], cat="party", colors=["Plum"], tags=["Party", "Wedding guest"]),
+    dict(files=["Party dress 25k_(3).jpg", "Party dress 25k_(6).jpg"], cat="party", colors=["Red"], tags=["Party", "Wedding guest"]),
+    dict(files=["Party dress 25k_(4).jpg", "Party dress 25k_(5).jpg"], cat="party", colors=["Sky Blue", "Lemon"], tags=["Party"]),
+    dict(files=["Party dress 25k_(7).jpg"], cat="party", colors=["Pink", "White", "Mauve", "Yellow", "Sky Blue", "Red"], tags=["Party"]),
+    dict(files=["Party dress 25k_.jpg"], cat="party", colors=["Black"], tags=["Party"]),
+    dict(files=["Party mini dress 25k_.jpg", "Short min dress 25k_.jpg"], cat="party", colors=["Red", "Brown", "Black"], tags=["Party"]),
+    dict(files=["Princess dress 25k.jpg"], cat="party", colors=["Red", "Black"], tags=["Party", "Wedding guest"]),
+    dict(files=["Classy dress 25k_.jpg"], cat="office", colors=["Navy"], tags=["Office"]),
+    dict(files=["Classy dress 35k.jpg"], cat="office", colors=["Lime", "Brown", "Olive", "Black", "Red", "Cream"], tags=["Office", "Church"]),
+    dict(files=["Classy dress 35k_.jpg"], cat="office", colors=["Black", "Green", "Brown", "Orange", "Cream", "Red"], tags=["Office", "Church"]),
+    dict(files=["Office dress 25k.jpg"], cat="office", colors=["Black & White"], tags=["Office"]),
+    dict(files=["Office dress 30k.jpg"], cat="office", colors=["Black & White"], tags=["Office"]),
+    dict(files=["Office dress 35k.jpg"], cat="office", colors=["Black"], tags=["Office"]),
+    dict(files=["Straight dress 25k_.jpg"], cat="office", colors=["Navy"], tags=["Office"]),
+    dict(files=["Long satin dress 25k_(1).jpg"], cat="satin", colors=["Pink", "Teal", "Red", "Brown", "Olive", "Black", "Champagne", "Rust"], tags=["Wedding guest", "Satin"]),
+    dict(files=["Long satin dress 25k_(2).jpg"], cat="satin", colors=["Lime"], tags=["Party", "Satin"]),
+    dict(files=["Long satin dress 25k_(3).jpg"], cat="satin", colors=["Blush", "Mustard", "Lime", "Champagne", "Black", "Red", "Brown"], tags=["Wedding guest", "Satin"]),
+    dict(files=["Long satin dress 25k_(4).jpg"], cat="satin", colors=["Brown", "Cream", "Mustard", "Orange", "Pink", "Black"], tags=["Party", "Satin"]),
+    dict(files=["Long satin dress 25k_.jpg"], cat="satin", colors=["Mustard", "Brown", "Champagne", "Pink", "Black", "Royal Blue"], tags=["Wedding guest", "Satin"]),
+    dict(files=["satin ceremonial dress 25,000.jpeg"], cat="satin", colors=["Burgundy"], tags=["Wedding guest", "Satin"]),
+    dict(files=["Summer dress 25k.jpg"], cat="summer", colors=["Orange", "Lime", "Sky Blue", "Fuchsia"], tags=["Weekend"]),
+    dict(files=["Summer dress 25k_(1).jpg"], cat="summer", colors=["Sky Blue"], tags=["Weekend"]),
+    dict(files=["Summer dress 25k_(2).jpg"], cat="summer", colors=["Yellow", "Black", "Sky Blue", "White", "Pink"], tags=["Weekend"]),
+    dict(files=["Summer dress 25k_(3).jpg"], cat="summer", colors=["Orange", "Pink", "Fuchsia", "Yellow", "Sky Blue"], tags=["Weekend"]),
+    dict(files=["Summer dress 25k_.jpg"], cat="summer", colors=["Yellow"], tags=["Weekend"]),
+    dict(files=["Summer dress 30k.jpg"], cat="summer", colors=["Yellow"], tags=["Weekend"]),
+    dict(files=["Summer long dress 25k_.jpg"], cat="summer", colors=["Fuchsia", "Sky Blue", "Yellow", "Orange", "White", "Black", "Pink"], tags=["Weekend", "Plus size"]),
+    dict(files=["Denim dress 25k.jpg", "Denim dress 25k_.jpg"], cat="denim", colors=["Denim"], tags=["Denim", "Weekend"]),
+    dict(files=["Denim dress 30k.jpg"], cat="denim", colors=["Denim"], tags=["Denim", "Plus size"]),
+    dict(files=["Denim dress 30k_(1).jpg"], cat="denim", colors=["Denim"], tags=["Denim", "Plus size"], sizes=FREE_SIZE),
+    dict(files=["Denim dress 30k_(2).jpg"], cat="denim", colors=["Denim"], tags=["Denim", "Party"]),
+    dict(files=["Denim dress 30k_(3).jpg"], cat="denim", colors=["Brown", "Denim"], tags=["Denim", "Plus size"]),
+    dict(files=["Denim dress 30k_.jpg"], cat="denim", colors=["Denim"], tags=["Denim", "Weekend"]),
+    dict(files=["Short denim 25k.jpg"], name="Short denim dress", cat="denim", colors=["Denim"], tags=["Denim", "Weekend"]),
+    dict(files=["Short denim dress 25k.jpg"], cat="denim", colors=["Denim"], tags=["Denim", "Weekend", "Plus size"]),
     # --- Completes ---
-    dict(
-        name="Puff-Sleeve Double-Button Trouser Set",
-        cat="trouser-sets",
-        price=52000,
-        material="Crepe",
-        tags=["Office", "Church"],
-        colors=["Cream", "Brown", "Magenta", "Burgundy", "Navy"],
-        images=[(38, None)],
-    ),
-    dict(
-        name="Belted Sleeveless Tunic & Wide-Leg Set",
-        cat="trouser-sets",
-        price=48000,
-        material="Crepe",
-        tags=["Office"],
-        colors=["Black", "Cream", "Orange", "Burgundy", "Brown"],
-        images=[(39, None)],
-    ),
-    dict(
-        name="Pinstripe Belted Vest & Trouser Set",
-        cat="trouser-sets",
-        price=55000,
-        material="Pinstripe suiting",
-        tags=["Office"],
-        colors=["Cream", "Burgundy", "Grey", "Charcoal"],
-        images=[(40, None)],
-    ),
-    dict(
-        name="Wrap-Belt Blazer Top & Trouser Set",
-        cat="trouser-sets",
-        price=52000,
-        sale=45000,
-        material="Crepe",
-        tags=["Office", "Church"],
-        colors=["Taupe", "Orange", "Cream", "Burgundy", "Black", "Green"],
-        images=[(41, None)],
-    ),
-    dict(
-        name="Statement-Button Belted Vest Set",
-        cat="trouser-sets",
-        price=50000,
-        material="Crepe",
-        tags=["Office"],
-        colors=["Sky Blue", "Burgundy", "White", "Lime", "Purple", "Black"],
-        images=[(42, None)],
-    ),
-    dict(
-        name="Asymmetric Button Vest & Trouser Set",
-        cat="trouser-sets",
-        price=55000,
-        material="Suiting",
-        tags=["Office", "Party"],
-        colors=["Red", "White"],
-        images=[(43, "Red"), (44, "White")],
-    ),
-    dict(
-        name="Contrast-Collar Vest Suit Set",
-        cat="trouser-sets",
-        price=58000,
-        material="Suiting",
-        tags=["Office"],
-        colors=["Burgundy", "Black", "Orange", "Sky Blue", "Pink"],
-        images=[(45, None)],
-    ),
-    dict(
-        name="Brooch Peplum Top & Wide-Leg Set",
-        cat="trouser-sets",
-        price=50000,
-        material="Crepe",
-        tags=["Office", "Church"],
-        colors=["Burgundy", "White", "Lime", "Sky Blue", "Black"],
-        images=[(46, None)],
-    ),
-    dict(
-        name="H-Knit Cardigan Three-Piece Set",
-        cat="knit-sets",
-        price=65000,
-        material="Rib knit",
-        fit="Stretchy",
-        tags=["Knit"],
-        colors=["Brown"],
-        images=[(47, "Brown")],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Striped Cape Knit Set",
-        cat="knit-sets",
-        price=60000,
-        material="Knit",
-        fit="Stretchy",
-        tags=["Knit"],
-        colors=["Taupe", "Grey"],
-        images=[(48, "Taupe"), (64, "Grey")],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Colorblock Long Cardigan Set",
-        cat="knit-sets",
-        price=62000,
-        material="Knit",
-        fit="Stretchy",
-        tags=["Knit", "Office"],
-        colors=["Green", "Burgundy"],
-        images=[(49, "Green"), (50, "Burgundy")],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Abstract Print Shirt & Trouser Set",
-        cat="print-sets",
-        price=40000,
-        material="Satin",
-        tags=["Weekend"],
-        colors=["Cream"],
-        images=[(51, "Cream")],
-    ),
-    dict(
-        name="Striped Panel Shirt & Trouser Set",
-        cat="print-sets",
-        price=42000,
-        material="Satin",
-        tags=["Weekend", "Office"],
-        colors=["Mustard"],
-        images=[(52, "Mustard")],
-    ),
-    dict(
-        name="Geometric Print Shirt & Trouser Set",
-        cat="print-sets",
-        price=42000,
-        material="Satin",
-        tags=["Weekend", "Party"],
-        colors=["Black"],
-        images=[(53, "Black")],
-    ),
-    dict(
-        name="Marble Print Shirt & Trouser Set",
-        cat="print-sets",
-        price=40000,
-        material="Satin",
-        tags=["Weekend"],
-        colors=["Black & White"],
-        images=[(54, "Black & White")],
-    ),
-    dict(
-        name="Wavy Stripe Shirt & Trouser Set",
-        cat="print-sets",
-        price=42000,
-        material="Satin",
-        tags=["Weekend", "Plus size"],
-        colors=["Brown", "Black"],
-        images=[(55, None), (67, None), (59, "Black")],
-    ),
-    dict(
-        name="Chain Print Shirt & Trouser Set",
-        cat="print-sets",
-        price=42000,
-        material="Satin",
-        tags=["Weekend", "Plus size"],
-        colors=["Brown"],
-        images=[(56, "Brown")],
-    ),
-    dict(
-        name="Tropical Print Knit Cardigan Set",
-        cat="knit-sets",
-        price=58000,
-        material="Jacquard knit",
-        fit="Stretchy",
-        tags=["Knit"],
-        colors=["Yellow", "Black", "Beige", "Brown"],
-        images=[(57, None), (65, None)],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Ribbed Button Cardigan Set",
-        cat="knit-sets",
-        price=55000,
-        sale=48000,
-        material="Rib knit",
-        fit="Stretchy",
-        tags=["Knit", "Office"],
-        colors=["Grey", "Beige", "Burgundy", "Cream", "Black"],
-        images=[(58, None)],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Monogram Knit Poncho & Trouser Set",
-        cat="knit-sets",
-        price=58000,
-        material="Knit",
-        fit="Stretchy",
-        tags=["Knit"],
-        colors=["Beige", "Grey", "Black", "Brown"],
-        images=[(60, None)],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Long Cardigan Three-Piece Knit Set",
-        cat="knit-sets",
-        price=68000,
-        material="Knit",
-        fit="Stretchy",
-        tags=["Knit", "Office"],
-        colors=["Beige", "Brown", "Taupe", "Black"],
-        images=[(61, None), (63, None)],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Scarf Print Knit Poncho Set",
-        cat="knit-sets",
-        price=60000,
-        material="Knit",
-        fit="Stretchy",
-        tags=["Knit"],
-        colors=["Brown", "Burgundy", "Cream", "Black", "Beige"],
-        images=[(62, None)],
-        sizes=KNIT_SIZES,
-    ),
-    dict(
-        name="Jacquard Button-Front Shirt Maxi Dress",
-        cat="maxi",
-        price=45000,
-        material="Textured jacquard",
-        fit="Fitted waist, full skirt",
-        tags=["Church", "Office", "Wedding guest"],
-        colors=["Lemon"],
-        images=[(68, "Lemon")],
-    ),
-    dict(
-        name="Oversized Linen Shirt & Wide-Leg Set",
-        cat="trouser-sets",
-        price=45000,
-        material="Linen blend",
-        fit="Relaxed",
-        tags=["Office", "Weekend", "Church"],
-        colors=["Brown", "Burgundy", "Navy"],
-        images=[(69, None)],
-    ),
+    dict(files=["Casual complete 25k.jpg"], cat="trouser-sets", colors=["Navy"], tags=["Weekend"]),
+    dict(files=["Classy complete 30k.jpg"], cat="trouser-sets", colors=["Mustard", "Cream", "Rust", "Green", "Brown", "Black"], tags=["Party"]),
+    dict(files=["Classy complete 35k.jpg", "Classy complete 35k_.jpg"], cat="trouser-sets", colors=["Cream", "Burgundy", "Grey", "Charcoal"], tags=["Office"]),
+    dict(files=["Classy complete 35k_(1).jpg", "Women complete 35k.jpg"], cat="trouser-sets", colors=["Sky Blue", "Burgundy", "White", "Lime", "Purple", "Black"], tags=["Office"]),
+    dict(files=["Classy complete 35k_(2).jpg"], cat="trouser-sets", colors=["Burgundy", "Black", "Orange", "Sky Blue", "Pink"], tags=["Office"]),
+    dict(files=["Complete 25k.jpg"], cat="trouser-sets", colors=["Brown", "Burgundy", "Navy"], tags=["Office", "Weekend"]),
+    dict(files=["Complete 35k_.jpg"], cat="trouser-sets", colors=["Black", "Cream", "Orange", "Burgundy", "Brown"], tags=["Office"]),
+    dict(files=["Men_ women sets 30k.jpg"], name="Men & women set", cat="trouser-sets", colors=["Navy", "Cream", "Olive", "Black"], tags=["Weekend"]),
+    dict(files=["3pieces complete 35k.jpg"], name="3-piece complete", cat="knit-sets", colors=["Cream", "Taupe", "Brown", "Grey", "Navy", "Black"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Complete 35k.jpg", "Complete 35k_(2).jpg"], cat="knit-sets", colors=["Burgundy", "Green"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Complete 35k_(1).jpg"], cat="knit-sets", colors=["Brown"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Complete 40,000.jpeg"], cat="knit-sets", colors=["Taupe", "Brown", "Black"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Complete 40k(1).jpeg"], cat="knit-sets", colors=["Beige", "Black", "Brown", "Grey"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Complete 40k(2).jpeg"], cat="knit-sets", colors=["Beige", "Brown", "Taupe", "Black"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Complete 40k.jpeg"], cat="knit-sets", colors=["Grey", "Beige", "Burgundy", "Cream", "Black"], tags=["Knit", "Office"], sizes=FREE_SIZE),
+    dict(files=["Women suit 40k.jpg", "Women suit 40k(1).jpg"], cat="suits", colors=["Green", "Black", "Navy"], tags=["Office"]),
+    dict(files=["Jumpsuit 25k.jpg"], cat="jumpsuits", colors=["Lime"], tags=["Weekend", "Party"]),
+    # --- Boubous, knitwear, separates ---
+    dict(files=["Boubou 25k(1).jpg"], cat="boubous", colors=["Burgundy"], tags=["Plus size", "Church"], sizes=FREE_SIZE),
+    dict(files=["Boubou 25k.jpg"], cat="boubous", colors=["Pink"], tags=["Plus size", "Weekend"], sizes=FREE_SIZE),
+    dict(files=["Simple Boubou lait 25k.jpg", "Simple Boubou lait 25k_.jpg"], cat="boubous", colors=["Multicolor"], tags=["Plus size", "Weekend"], sizes=FREE_SIZE),
+    dict(files=["Bug size sweater 25k.jpg"], name="Big size sweater", cat="knitwear", colors=["Pink"], tags=["Knit", "Plus size"], sizes=FREE_SIZE),
+    dict(files=["Simple sweater 18k.jpg", "Simple sweater 18k_.jpg"], cat="knitwear", colors=["Grey", "Black"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Sweater 25k_.jpg"], cat="knitwear", colors=["White", "Beige", "Brown", "Black", "Grey", "Pink"], tags=["Knit"], sizes=FREE_SIZE),
+    dict(files=["Top 18k(1).jpg"], cat="tops-bottoms", colors=["Olive", "Black", "Burgundy", "Purple"], tags=["Weekend"]),
+    dict(files=["Top 18k.jpg"], cat="tops-bottoms", colors=["Black", "White", "Beige", "Red"], tags=["Office"]),
+    dict(files=["Cotton skirts 12k.jpg"], name="Cotton skirt", cat="tops-bottoms", colors=["Red", "Mustard", "Navy", "Purple", "Burgundy", "Grey", "Black"], tags=["Office"]),
+    dict(files=["Office trousers 18k.jpg"], cat="tops-bottoms", colors=["Red", "Beige", "Teal"], tags=["Office"]),
+    # --- Unpriced: drafts ---
+    dict(files=["Finished_.jpg"], name="One-shoulder lace maxi dress", cat="long", colors=["Red", "Black", "Lemon"], tags=["Party", "Lace"], finished=True),
+    dict(files=["Finished_(1).jpg"], name="Puff-sleeve pencil dress", cat="office", colors=["White", "Sky Blue", "Black", "Pink", "Navy", "Mint"], tags=["Office", "Church"], finished=True),
+    dict(files=["Finished_(2).jpg"], name="Flower appliqué swing dress", cat="short", colors=["Sky Blue"], tags=["Weekend"], finished=True),
+    dict(files=["Finished_(3).jpg"], name="Denim shirt dress", cat="denim", colors=["Denim"], tags=["Denim", "Weekend"], finished=True),
+    dict(files=["Finished_(4).jpg"], name="Printed kaftan with headwrap", cat="boubous", colors=["Black & White"], tags=["Plus size"], sizes=FREE_SIZE, finished=True),
+    dict(files=["Finished_(5).jpg"], name="Puff-sleeve double-breasted set", cat="trouser-sets", colors=["Cream", "Brown", "Magenta", "Burgundy", "Navy"], tags=["Office"], finished=True),
+    dict(files=["Finished_(6).jpg"], name="Belted wrap top & trouser set", cat="trouser-sets", colors=["Taupe", "Orange", "Cream", "Burgundy", "Black", "Green"], tags=["Office"], finished=True),
+    dict(files=["Finished_(7).jpg", "Finished_(8).jpg"], name="Statement-button vest & trouser set", cat="trouser-sets", colors=["Red", "White"], tags=["Office", "Party"], finished=True),
+    dict(files=["Finished_(9).jpg"], name="Brooch top & wide-leg set", cat="trouser-sets", colors=["Burgundy", "White", "Lime", "Sky Blue", "Black"], tags=["Office"], finished=True),
+    dict(files=["Finished_(10).jpg"], name="Striped cape & trouser set", cat="knit-sets", colors=["Taupe"], tags=["Knit"], sizes=FREE_SIZE, finished=True),
+    dict(files=["Finished_(11).jpg"], name="Swirl print shirt & trouser set", cat="print-sets", colors=["Cream"], tags=["Weekend"], finished=True),
+    dict(files=["Finished_(12).jpg"], name="Striped shirt & trouser set", cat="print-sets", colors=["Mustard"], tags=["Weekend"], finished=True),
+    dict(files=["Finished_(13).jpg"], name="Geometric print shirt & trouser set", cat="print-sets", colors=["Black"], tags=["Weekend"], finished=True),
+    dict(files=["Finished_(14).jpg"], name="Wavy stripe shirt & trouser set", cat="print-sets", colors=["Brown", "Black"], tags=["Weekend", "Plus size"], finished=True),
+    dict(files=["Finished_(15).jpg"], name="Chain print shirt & trouser set", cat="print-sets", colors=["Brown"], tags=["Weekend", "Plus size"], finished=True),
+    dict(files=["Finished_(16).jpg"], name="Tropical print cardigan set", cat="knit-sets", colors=["Yellow", "Black"], tags=["Knit"], sizes=FREE_SIZE, finished=True),
+    dict(files=["Finished_(17).jpg"], name="Tropical print knit cardigan set", cat="knit-sets", colors=["Beige", "Brown"], tags=["Knit"], sizes=FREE_SIZE, finished=True),
+    dict(files=["Finished_(18).jpg"], name="Striped knit poncho set", cat="knit-sets", colors=["Grey"], tags=["Knit"], sizes=FREE_SIZE, finished=True),
+    dict(files=["Finished_(19).jpg"], name="Scarf print knit poncho set", cat="knit-sets", colors=["Brown", "Burgundy", "Cream", "Black", "Beige"], tags=["Knit"], sizes=FREE_SIZE, finished=True),
+    dict(files=["Finished_(20).jpg"], name="Zebra print shirt & trouser set", cat="print-sets", colors=["Black & White"], tags=["Weekend"], finished=True),
+    dict(files=["Finished_(21).jpg"], name="Abstract print shirt & trouser set", cat="print-sets", colors=["Black & White"], tags=["Weekend"], finished=True),
+    dict(files=["Sold out.jpeg"], name="Button-front maxi shirt dress", cat="long", colors=["Royal Blue"], tags=["Church"], finished=True),
+    dict(files=["IMG-20261008-WA0014.jpg"], name="Striped shirt dress", cat="short", colors=["Sky Blue"], tags=["Weekend"]),
+    dict(files=["WhatsApp Image 2026-06-27 at 7.59.20 PM.jpeg"], name="Puff-sleeve lace midi dress", cat="short", colors=["Pink", "Black", "White", "Mauve"], tags=["Wedding guest", "Lace"]),
+    dict(files=["WhatsApp Image 2026-06-27 at 7.59.19 PM (1).jpeg"], name="Square-neck lace midi dress", cat="short", colors=["Mauve", "Pink", "Black", "White"], tags=["Wedding guest", "Lace"]),
+    dict(files=["WhatsApp Image 2026-06-27 at 7.59.19 PM (2).jpeg"], name="Bow-neck lace pencil dress", cat="office", colors=["White", "Pink", "Sky Blue", "Black"], tags=["Church", "Lace"]),
 ]
 
 NEW_ARRIVALS = 12
+
+# "Long dress 25k_(1)" -> ("Long dress", 25000); "Complete 40,000" -> ("Complete", 40000)
+PRICE_RE = re.compile(
+    r"^(?P<name>.*?)\s+(?:(?P<k>\d+)k|(?P<full>\d{1,3}(?:,\d{3})+))(?![A-Za-z0-9])"
+)
+
+
+def parse_file_name(file_name):
+    match = PRICE_RE.match(Path(file_name).stem)
+    if not match:
+        return None, None
+    price = int(match["k"]) * 1000 if match["k"] else int(match["full"].replace(",", ""))
+    return match["name"].strip().capitalize(), price
 
 
 def web_jpeg(path):
@@ -682,28 +266,32 @@ def web_jpeg(path):
 
 
 class Command(BaseCommand):
-    help = "Seed the catalog with products and photos from a folder of numbered JPEGs."
+    help = "Seed the catalog with products and photos named '<name> <price>k.jpg'."
 
     def add_arguments(self, parser):
         parser.add_argument("photos_dir", type=Path)
         parser.add_argument(
+            "--wipe",
+            action="store_true",
+            help="Delete all existing products and their photos first.",
+        )
+        parser.add_argument(
             "--replace-images",
             action="store_true",
-            help="Delete and re-upload photos for products that already have some.",
+            help="Re-upload photos for products that already have them.",
         )
 
-    def handle(self, photos_dir, replace_images, **options):
+    def handle(self, photos_dir, wipe, replace_images, **options):
         if not photos_dir.is_dir():
             raise CommandError(f"{photos_dir} is not a directory")
         missing = [
-            n
-            for p in PRODUCTS
-            for n, _ in p["images"]
-            if not (photos_dir / f"{n}.jpg").exists()
+            f for p in PRODUCTS for f in p["files"] if not (photos_dir / f).exists()
         ]
         if missing:
             raise CommandError(f"Missing photos: {missing}")
 
+        if wipe:
+            self.wipe()
         with transaction.atomic():
             categories = self.seed_categories()
             sizes = {
@@ -725,28 +313,66 @@ class Command(BaseCommand):
                 for name in TAGS
             }
 
-            products = []
-            for i, data in enumerate(PRODUCTS, start=1):
-                product = self.seed_product(
+        # One transaction per product so a dropped connection only costs that
+        # product; re-running picks up where it left off.
+        products = []
+        for i, data in enumerate(PRODUCTS, start=1):
+            product = self.with_retries(
+                lambda: self.seed_product(
                     i, data, categories, sizes, colors, tags, photos_dir, replace_images
                 )
-                products.append(product)
-                self.stdout.write(f"  {product}")
+            )
+            products.append(product)
+            self.stdout.write(f"  {product}")
 
+        published = [p for p in products if p.is_published]
+        with transaction.atomic():
             self.seed_collection(
                 "New Arrivals",
                 0,
                 "The latest pieces in the boutique.",
-                products[-NEW_ARRIVALS:],
+                published[:NEW_ARRIVALS],
             )
             self.seed_collection(
                 "Promos",
                 1,
                 "Limited-time prices.",
-                [p for p in products if p.sale_price],
+                [p for p in published if p.sale_price],
             )
 
-        self.stdout.write(self.style.SUCCESS(f"Seeded {len(products)} products."))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Seeded {len(products)} products ({len(published)} published)."
+            )
+        )
+
+    def with_retries(self, fn, attempts=3):
+        for attempt in range(1, attempts + 1):
+            try:
+                with transaction.atomic():
+                    return fn()
+            except OperationalError:
+                if attempt == attempts:
+                    raise
+                self.stderr.write("  connection lost, retrying...")
+                connection.close()
+                time.sleep(5 * attempt)
+
+    def wipe(self):
+        with transaction.atomic():
+            files = list(ProductImage.objects.values_list("image", flat=True))
+            count = Product.objects.count()
+            Product.objects.all().delete()
+            keep = {slugify(name) for name, _, _ in CATEGORIES}
+            stale = Category.objects.exclude(slug__in=keep)
+            # Children first: parent is PROTECT.
+            stale.filter(parent__isnull=False).delete()
+            stale.delete()
+        # Files go only once the rows are gone for good.
+        storage = ProductImage._meta.get_field("image").storage
+        for name in files:
+            storage.delete(name)
+        self.stdout.write(f"Deleted {count} products.")
 
     def seed_categories(self):
         categories = {}
@@ -767,49 +393,63 @@ class Command(BaseCommand):
         self, i, data, categories, sizes, colors, tags, photos_dir, replace_images
     ):
         code = f"ZB-{i:04d}"
+        file_name, price = parse_file_name(data["files"][0])
+        name = data.get("name") or file_name
+        priced = price is not None
         product, _ = Product.objects.update_or_create(
             code=code,
             defaults={
-                "name": data["name"],
-                "slug": slugify(data["name"]),
+                "name": name,
+                "slug": f"{slugify(name)}-{code.lower()}",
                 "description": data.get("description", ""),
                 "material": data.get("material", ""),
                 "fit_note": data.get("fit", ""),
-                "price": data["price"],
+                "price": price or 0,
                 "sale_price": data.get("sale"),
-                "is_published": True,
+                "is_published": priced,
             },
         )
         category = categories[data["cat"]]
-        product.categories.set([category, category.parent])
+        product.categories.set(filter(None, [category, category.parent]))
         product.tags.set([tags[t] for t in data["tags"]])
 
-        for size_name in data.get("sizes", DRESS_SIZES):
-            for color_name in data["colors"]:
-                Variant.objects.get_or_create(
-                    product=product, size=sizes[size_name], color=colors[color_name]
-                )
+        # Batched: one query per variant is far too slow over a remote DB.
+        available = not data.get("finished", False)
+        have = set(product.variants.values_list("size_id", "color_id"))
+        Variant.objects.bulk_create(
+            Variant(product=product, size=size, color=color, is_available=available)
+            for size in (sizes[s] for s in data.get("sizes", DRESS_SIZES))
+            for color in (colors[c] for c in data["colors"])
+            if (size.pk, color.pk) not in have
+        )
+        product.variants.update(is_available=available)
 
-        if replace_images:
-            for old in product.images.all():
-                old.image.delete(save=False)
-                old.delete()
-        if not product.images.exists():
-            for position, (number, color_name) in enumerate(data["images"]):
-                color = colors[color_name] if color_name else None
-                alt = (
-                    f"{product.name} in {color_name}"
-                    if color
-                    else f"{product.name}, all colors"
-                )
-                img = ProductImage(
-                    product=product, color=color, alt_text=alt, position=position
-                )
-                img.image.save(
-                    f"{product.slug}-{position + 1}.jpg",
-                    ContentFile(web_jpeg(photos_dir / f"{number}.jpg")),
-                    save=True,
-                )
+        existing = list(product.images.all())
+        if (
+            not replace_images
+            and len(existing) == len(data["files"])
+            and all(img.image.storage.exists(img.image.name) for img in existing)
+        ):
+            return product
+        for old in product.images.all():
+            old.image.delete(save=False)
+            old.delete()
+        only_color = data["colors"][0] if len(data["colors"]) == 1 else None
+        for position, file in enumerate(data["files"]):
+            color = colors[only_color] if only_color else None
+            alt = (
+                f"{product.name} in {only_color}"
+                if color
+                else f"{product.name}, all colors"
+            )
+            img = ProductImage(
+                product=product, color=color, alt_text=alt, position=position
+            )
+            img.image.save(
+                f"{slugify(product.name)}-{code.lower()}-{position + 1}.jpg",
+                ContentFile(web_jpeg(photos_dir / file)),
+                save=True,
+            )
         return product
 
     def seed_collection(self, name, position, description, products):
