@@ -13,6 +13,7 @@ class SocialsOut(Schema):
 
 class SiteSettingsOut(Schema):
     show_prices: bool
+    show_product_names: bool
     whatsapp_number: str
     whatsapp_template: str
     whatsapp_restock_template: str
@@ -29,6 +30,7 @@ class SettingsController:
         s = SiteSettings.load()
         return {
             "show_prices": s.show_prices,
+            "show_product_names": s.show_product_names,
             "whatsapp_number": s.whatsapp_number,
             "whatsapp_template": s.whatsapp_template,
             "whatsapp_restock_template": s.whatsapp_restock_template,

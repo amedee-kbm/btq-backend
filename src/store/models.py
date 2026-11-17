@@ -17,6 +17,9 @@ class SiteSettings(models.Model):
     show_prices = models.BooleanField(
         default=True, help_text="Untick to hide prices across the website"
     )
+    show_product_names = models.BooleanField(
+        default=True, help_text="Untick to hide product names across the website"
+    )
     whatsapp_number = models.CharField(
         max_length=20,
         validators=[RegexValidator(r"^\d+$", "Digits only, e.g. 250781427209.")],
