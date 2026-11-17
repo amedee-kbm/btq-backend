@@ -10,10 +10,11 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
-import environ
 from datetime import timedelta
 from pathlib import Path
 
+import environ
+from django.templatetags.static import static
 from django.urls import reverse_lazy
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -232,6 +233,8 @@ UNFOLD = {
     "SITE_HEADER": "Mucuruzi Digital",
     "SITE_SYMBOL": "storefront",
     "SHOW_VIEW_ON_SITE": False,
+    "STYLES": [lambda request: static("catalog/admin.css")],
+    "SCRIPTS": [lambda request: static("catalog/admin.js")],
     "SIDEBAR": {
         "show_search": True,
         "navigation": [

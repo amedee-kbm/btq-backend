@@ -1,0 +1,12 @@
+/* Browsers give fieldsets min-width: min-content, so the file input in the
+   product image inline pushes the form wider than a phone screen. */
+fieldset {
+  min-width: 0;
+}
+
+/* "Add variants" checkboxes: wrap across the row instead of one per line. */
+#id_variant_sizes,
+#id_variant_colors {
+  flex-flow: row wrap;
+  gap: 0.75rem 1.25rem;
+}

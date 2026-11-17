@@ -1,10 +1,13 @@
+import itertools
+
 from django.contrib import admin
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Count, Exists, F, Max, OuterRef
+from django.db.models.functions import Coalesce
 from django.utils.html import format_html
-from unfold.admin import ModelAdmin, TabularInline
+from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
 from . import revalidate
-
+from .forms import ProductAdminForm
 from .models import (
     Category,
     Collection,
@@ -28,6 +31,19 @@ def thumbnail(image, size):
         size,
         size,
     )
+
+
+def plain_select(formfield, label):
+    """Size/color dropdown that names itself and drops the add/edit buttons.
+
+    Inline column headers are hidden on phones, and the buttons squeeze the row.
+    Sizes and colors have their own admin pages.
+    """
+    formfield.empty_label = label
+    widget = formfield.widget
+    widget.can_add_related = widget.can_change_related = False
+    widget.can_delete_related = widget.can_view_related = False
+    return formfield
 
 
 def available_variants():
@@ -70,23 +86,42 @@ class SoldOutFilter(admin.SimpleListFilter):
 
 
 class VariantInline(TabularInline):
+    """Existing variants. New ones usually come from "Add variants"."""
+
     model = Variant
-    extra = 3
+    extra = 0
+    show_title = False  # "BQ-0100 / M / Black" repeats the row's own dropdowns
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name in ("size", "color"):
+            return plain_select(formfield, db_field.verbose_name.capitalize())
+        return formfield
 
 
-class ProductImageInline(TabularInline):
+class ProductImageInline(StackedInline):
+    """Stacked: as a table it scrolls sideways on phones. Drag to reorder.
+
+    The image widget shows its own thumbnail. New photos usually come from
+    "Add photos".
+    """
+
     model = ProductImage
-    extra = 1
-    fields = ["preview", "image", "color", "alt_text", "position"]
-    readonly_fields = ["preview"]
+    extra = 0
+    fields = ["image", "color", "alt_text", "position"]
+    ordering_field = "position"
+    hide_ordering_field = True
 
-    @admin.display(description="Preview")
-    def preview(self, obj):
-        return thumbnail(obj.image, 80)
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == "color":
+            return plain_select(formfield, "All colors")
+        return formfield
 
 
 @admin.register(Product)
 class ProductAdmin(ModelAdmin):
+    form = ProductAdminForm
     list_display = [
         "code",
         "name",
@@ -104,15 +139,18 @@ class ProductAdmin(ModelAdmin):
     search_fields = ["code", "name", "material", "categories__name", "tags__name"]
     save_on_top = True
     prepopulated_fields = {"slug": ("name",)}
-    filter_horizontal = ["categories", "tags"]
+    # Search boxes, not filter_horizontal: those take a third of a phone screen.
+    autocomplete_fields = ["categories", "tags"]
     readonly_fields = ["created_at", "updated_at"]
     actions = ["publish", "unpublish", "mark_sold_out", "mark_available", "end_sale"]
-    inlines = [VariantInline, ProductImageInline]
+    inlines = [ProductImageInline, VariantInline]
     fieldsets = [
         ("Basics", {"fields": ["name", "slug", "code", "is_published"]}),
         ("Pricing", {"fields": ["price", "sale_price"]}),
         ("Details", {"fields": ["description", "material", "fit_note"]}),
         ("Classification", {"fields": ["categories", "tags"]}),
+        ("Add photos", {"fields": ["new_photos", "new_photos_color"]}),
+        ("Add variants", {"fields": ["variant_sizes", "variant_colors"]}),
         (
             "Timestamps",
             {"fields": ["created_at", "updated_at"], "classes": ["collapse"]},
@@ -126,6 +164,40 @@ class ProductAdmin(ModelAdmin):
             .annotate(has_available_variant=Exists(available_variants()))
             .prefetch_related("images")
         )
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj:
+            return fieldsets
+        # Nothing to show before the first save.
+        return [fs for fs in fieldsets if fs[0] != "Timestamps"]
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        product, data = form.instance, form.cleaned_data
+
+        if data["new_photos"]:
+            last = product.images.aggregate(last=Max("position"))["last"]
+            start = 0 if last is None else last + 1
+            for offset, photo in enumerate(data["new_photos"]):
+                product.images.create(
+                    image=photo, color=data["new_photos_color"], position=start + offset
+                )
+
+        pairs = itertools.product(data["variant_sizes"], data["variant_colors"])
+        Variant.objects.bulk_create(
+            [Variant(product=product, size=s, color=c) for s, c in pairs],
+            ignore_conflicts=True,  # keeps existing variants as they are
+        )
+        if data["variant_sizes"]:
+            revalidate.schedule("catalog")  # bulk_create skips post_save signals
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name in ("price", "sale_price"):
+            # Digit keypad on phones; RWF has no decimals.
+            formfield.widget.attrs["inputmode"] = "numeric"
+        return formfield
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "categories":
@@ -191,8 +263,18 @@ class CategoryAdmin(ModelAdmin):
     ]
     list_editable = ["show_on_home", "position"]
     list_filter = ["show_on_home", ("parent", admin.RelatedOnlyFieldListFilter)]
-    search_fields = ["name"]
+    # parent__name: searching "dress" also finds "Dresses > Party".
+    search_fields = ["name", "parent__name"]
     prepopulated_fields = {"slug": ("name",)}
+    # Each parent, then its children. Set here because the product_count
+    # annotation (GROUP BY) drops Meta.ordering.
+    ordering = [
+        Coalesce("parent__position", "position"),
+        Coalesce("parent__name", "name"),
+        F("parent").asc(nulls_first=True),
+        "position",
+        "name",
+    ]
 
     def get_queryset(self, request):
         return (
@@ -230,6 +312,7 @@ class CollectionAdmin(ModelAdmin):
     list_editable = ["is_active", "position"]
     list_filter = ["is_active"]
     search_fields = ["name"]
+    ordering = ["position", "name"]  # the product_count annotation drops Meta.ordering
     save_on_top = True
     prepopulated_fields = {"slug": ("name",)}
     inlines = [CollectionProductInline]
@@ -254,6 +337,7 @@ class TagAdmin(ModelAdmin):
     list_display = ["name", "slug", "product_count"]
     search_fields = ["name"]
     prepopulated_fields = {"slug": ("name",)}
+    ordering = ["name"]  # the product_count annotation drops Meta.ordering
 
     def get_queryset(self, request):
         return (
