@@ -20,6 +20,9 @@ class SiteSettings(models.Model):
     show_product_names = models.BooleanField(
         default=True, help_text="Untick to hide product names across the website"
     )
+    show_color_swatches = models.BooleanField(
+        default=True, help_text="Untick to hide colour swatches across the website"
+    )
     whatsapp_number = models.CharField(
         max_length=20,
         validators=[RegexValidator(r"^\d+$", "Digits only, e.g. 250781427209.")],

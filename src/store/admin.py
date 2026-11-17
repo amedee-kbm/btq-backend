@@ -9,7 +9,10 @@ class SiteSettingsAdmin(admin.ModelAdmin):
     """One record: the list page jumps straight to it; no add or delete."""
 
     fieldsets = [
-        ("Storefront", {"fields": ["show_prices", "show_product_names"]}),
+        (
+            "Storefront",
+            {"fields": ["show_prices", "show_product_names", "show_color_swatches"]},
+        ),
         (
             "WhatsApp",
             {
