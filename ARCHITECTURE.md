@@ -1,4 +1,4 @@
-# Btq. — Backend Architecture
+# Mucuruzi Digital — Backend Architecture
 
 > Product scope and requirements: [`PRD.md`](./PRD.md). Frontend:
 > [`btq-frontend-nextjs/ARCHITECTURE.md`](https://github.com/amedee-kbm/btq-frontend-nextjs/blob/main/ARCHITECTURE.md).
@@ -88,8 +88,8 @@ New (🆕):
   | `updated_at` | auto | |
 
   Template placeholders: `{code}`, `{name}`, `{size}`, `{color}`, `{price}`, `{url}`. Defaults:
-  - order: `Hi Btq! I'd like {code} – {name}, size {size}, colour {color} ({price}). Is it available? {url}`
-  - restock: `Hi Btq! Is {code} – {name} coming back in size {size}, colour {color}? {url}`
+  - order: `Hi Mucuruzi Digital! I'd like {code} – {name}, size {size}, colour {color} ({price}). Is it available? {url}`
+  - restock: `Hi Mucuruzi Digital! Is {code} – {name} coming back in size {size}, colour {color}? {url}`
 
   The **frontend** fills the placeholders. The backend only stores the text.
 
@@ -278,8 +278,8 @@ ordered **sold-out last, then `CollectionProduct.position`**.
 ```json
 {
   "whatsapp_number": "250781427209",
-  "whatsapp_template": "Hi Btq! I'd like {code} – {name}, size {size}, colour {color} ({price}). Is it available? {url}",
-  "whatsapp_restock_template": "Hi Btq! Is {code} – {name} coming back in size {size}, colour {color}? {url}",
+  "whatsapp_template": "Hi Mucuruzi Digital! I'd like {code} – {name}, size {size}, colour {color} ({price}). Is it available? {url}",
+  "whatsapp_restock_template": "Hi Mucuruzi Digital! Is {code} – {name} coming back in size {size}, colour {color}? {url}",
   "phone": "+250781427209",
   "email": "",
   "address": "CHIC Building B30A, Kigali",
@@ -315,7 +315,7 @@ ordered **sold-out last, then `CollectionProduct.position`**.
   frontend deletes its cookies).
 - The browser never talks to Django for auth; the Next.js BFF holds the tokens in httpOnly
   cookies (see the frontend ARCHITECTURE).
-- No password reset in v1. It needs a sending domain, which Btq. doesn't have yet.
+- No password reset in v1. It needs a sending domain, which Mucuruzi Digital doesn't have yet.
 
 ## 6. Frontend revalidation webhook 🆕
 

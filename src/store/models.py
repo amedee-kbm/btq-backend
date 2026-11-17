@@ -2,11 +2,11 @@ from django.core.validators import RegexValidator
 from django.db import models
 
 DEFAULT_WHATSAPP_TEMPLATE = (
-    "Hi Btq! I'd like {code} – {name}, size {size}, colour {color} ({price}). "
+    "Hi {shop}! I'd like {code} – {name}, size {size}, colour {color} ({price}). "
     "Is it available? {url}"
 )
 DEFAULT_WHATSAPP_RESTOCK_TEMPLATE = (
-    "Hi Btq! Is {code} – {name} coming back in size {size}, colour {color}? {url}"
+    "Hi {shop}! Is {code} – {name} coming back in size {size}, colour {color}? {url}"
 )
 PLACEHOLDERS_HELP = "Placeholders: {code}, {name}, {size}, {color}, {price}, {url}"
 

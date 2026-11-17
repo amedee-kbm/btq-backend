@@ -1,4 +1,4 @@
-# Btq. — Product Requirements (Backend)
+# Mucuruzi Digital — Product Requirements (Backend)
 
 > Companion docs: [`ARCHITECTURE.md`](./ARCHITECTURE.md) (this repo) and the frontend's
 > [`PRD.md`](https://github.com/amedee-kbm/btq-frontend-nextjs/blob/main/PRD.md) /
@@ -6,12 +6,12 @@
 
 ## 1. Product overview (shared with the frontend PRD)
 
-Btq. is a single fashion boutique in Kigali, Rwanda, selling women's clothing: dresses,
+Mucuruzi Digital is a single fashion boutique in Kigali, Rwanda, selling women's clothing: dresses,
 matching sets ("completes"), jeans, shorts, boubous and more. Most customers arrive
 organically from TikTok videos.
 
 Until now, shoppers screenshotted items they liked, sent them to the seller on WhatsApp, and
-asked for more pictures. The Btq. website replaces that back-and-forth:
+asked for more pictures. The Mucuruzi Digital website replaces that back-and-forth:
 
 - Customers **browse the whole catalog themselves**, filtering by **category** (party, casual,
   maxi dresses…), by **occasion/style tags** (wedding guest, church…), and by **hand-picked
@@ -30,7 +30,7 @@ asked for more pictures. The Btq. website replaces that back-and-forth:
 | In v1 | Deferred / out |
 |---|---|
 | Catalog browse, filter, search, sort | Cart, online payments, orders, order tracking |
-| Product detail with variant availability | Password reset (until Btq. owns a domain for email) |
+| Product detail with variant availability | Password reset (until Mucuruzi Digital owns a domain for email) |
 | WhatsApp handoff (pre-filled message) | Guest (logged-out) favorites |
 | Favorites (login required) | Analytics / WhatsApp-tap lead tracking |
 | Owner-editable contact details & WhatsApp template | Kinyarwanda / multilingual content |

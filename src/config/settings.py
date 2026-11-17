@@ -228,8 +228,8 @@ def _nav(title, icon, url_name, perm):
 
 
 UNFOLD = {
-    "SITE_TITLE": "Btq. admin",
-    "SITE_HEADER": "Btq. admin",
+    "SITE_TITLE": "Mucuruzi Digital",
+    "SITE_HEADER": "Mucuruzi Digital",
     "SITE_SYMBOL": "storefront",
     "SHOW_VIEW_ON_SITE": False,
     "SIDEBAR": {
