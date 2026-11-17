@@ -12,8 +12,11 @@ PLACEHOLDERS_HELP = "Placeholders: {code}, {name}, {size}, {color}, {price}, {ur
 
 
 class SiteSettings(models.Model):
-    """Contact details and WhatsApp messages. A single row, always pk=1."""
+    """Storefront options, contact and WhatsApp details. A single row, always pk=1."""
 
+    show_prices = models.BooleanField(
+        default=True, help_text="Untick to hide prices across the website"
+    )
     whatsapp_number = models.CharField(
         max_length=20,
         validators=[RegexValidator(r"^\d+$", "Digits only, e.g. 250781427209.")],
