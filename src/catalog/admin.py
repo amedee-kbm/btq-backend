@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.db.models import Count, Exists, OuterRef
 from django.utils.html import format_html
+from unfold.admin import ModelAdmin, TabularInline
 
 from . import revalidate
 
@@ -68,12 +69,12 @@ class SoldOutFilter(admin.SimpleListFilter):
         return queryset
 
 
-class VariantInline(admin.TabularInline):
+class VariantInline(TabularInline):
     model = Variant
     extra = 3
 
 
-class ProductImageInline(admin.TabularInline):
+class ProductImageInline(TabularInline):
     model = ProductImage
     extra = 1
     fields = ["preview", "image", "color", "alt_text", "position"]
@@ -85,7 +86,7 @@ class ProductImageInline(admin.TabularInline):
 
 
 @admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
+class ProductAdmin(ModelAdmin):
     list_display = [
         "code",
         "name",
@@ -179,7 +180,7 @@ class ProductAdmin(admin.ModelAdmin):
 
 
 @admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
+class CategoryAdmin(ModelAdmin):
     list_display = [
         "__str__",
         "parent",
@@ -216,7 +217,7 @@ class CategoryAdmin(admin.ModelAdmin):
         return obj.product_count
 
 
-class CollectionProductInline(admin.TabularInline):
+class CollectionProductInline(TabularInline):
     model = CollectionProduct
     extra = 1
     fields = ["product", "position"]
@@ -224,7 +225,7 @@ class CollectionProductInline(admin.TabularInline):
 
 
 @admin.register(Collection)
-class CollectionAdmin(admin.ModelAdmin):
+class CollectionAdmin(ModelAdmin):
     list_display = ["name", "description", "is_active", "position", "product_count"]
     list_editable = ["is_active", "position"]
     list_filter = ["is_active"]
@@ -249,7 +250,7 @@ class CollectionAdmin(admin.ModelAdmin):
 
 
 @admin.register(Tag)
-class TagAdmin(admin.ModelAdmin):
+class TagAdmin(ModelAdmin):
     list_display = ["name", "slug", "product_count"]
     search_fields = ["name"]
     prepopulated_fields = {"slug": ("name",)}
@@ -267,14 +268,14 @@ class TagAdmin(admin.ModelAdmin):
 
 
 @admin.register(Size)
-class SizeAdmin(admin.ModelAdmin):
+class SizeAdmin(ModelAdmin):
     list_display = ["name", "position"]
     list_editable = ["position"]
     search_fields = ["name"]
 
 
 @admin.register(Color)
-class ColorAdmin(admin.ModelAdmin):
+class ColorAdmin(ModelAdmin):
     list_display = ["name", "swatch", "hex_code"]
     list_editable = ["hex_code"]
     search_fields = ["name", "hex_code"]
@@ -294,7 +295,7 @@ class ColorAdmin(admin.ModelAdmin):
 
 
 @admin.register(Favorite)
-class FavoriteAdmin(admin.ModelAdmin):
+class FavoriteAdmin(ModelAdmin):
     """Read-only: favorites belong to customers."""
 
     list_display = ["user", "product", "created_at"]

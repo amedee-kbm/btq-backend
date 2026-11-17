@@ -1,11 +1,12 @@
 from django.contrib import admin
 from django.shortcuts import redirect
+from unfold.admin import ModelAdmin
 
 from .models import SiteSettings
 
 
 @admin.register(SiteSettings)
-class SiteSettingsAdmin(admin.ModelAdmin):
+class SiteSettingsAdmin(ModelAdmin):
     """One record: the list page jumps straight to it; no add or delete."""
 
     fieldsets = [

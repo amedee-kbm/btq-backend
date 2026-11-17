@@ -1,12 +1,15 @@
 from django.contrib import admin
+from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
+from django.contrib.auth.models import Group
 from django.db.models import Count
+from unfold.admin import ModelAdmin
+from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 
 from .models import User
 
 
-class UserCreateForm(AdminUserCreationForm):
+class UserCreateForm(UserCreationForm):
     class Meta:
         model = User
         fields = ["email", "username"]
@@ -18,12 +21,22 @@ class UserEditForm(UserChangeForm):
         fields = "__all__"
 
 
+# Re-register Group so it picks up the Unfold styling too.
+admin.site.unregister(Group)
+
+
+@admin.register(Group)
+class GroupAdmin(BaseGroupAdmin, ModelAdmin):
+    pass
+
+
 @admin.register(User)
-class UserAdmin(BaseUserAdmin):
+class UserAdmin(BaseUserAdmin, ModelAdmin):
     """Shoppers and staff. Email is the login; username is the display name."""
 
     add_form = UserCreateForm
     form = UserEditForm
+    change_password_form = AdminPasswordChangeForm
     list_display = [
         "email",
         "username",

@@ -14,6 +14,8 @@ import environ
 from datetime import timedelta
 from pathlib import Path
 
+from django.urls import reverse_lazy
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -50,6 +52,9 @@ if RENDER_EXTERNAL_HOSTNAME:
 # Application definition
 
 INSTALLED_APPS = [
+    # Unfold must load before django.contrib.admin to override its templates.
+    "unfold",
+    "unfold.contrib.filters",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -205,6 +210,115 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=0)
     SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Admin theme (django-unfold)
+
+
+def _can_view(perm):
+    return lambda request: request.user.has_perm(perm)
+
+
+def _nav(title, icon, url_name, perm):
+    return {
+        "title": title,
+        "icon": icon,
+        "link": reverse_lazy(url_name),
+        "permission": _can_view(perm),
+    }
+
+
+UNFOLD = {
+    "SITE_TITLE": "Btq. admin",
+    "SITE_HEADER": "Btq. admin",
+    "SITE_SYMBOL": "storefront",
+    "SHOW_VIEW_ON_SITE": False,
+    "SIDEBAR": {
+        "show_search": True,
+        "navigation": [
+            {
+                "title": "Catalog",
+                "items": [
+                    _nav(
+                        "Products",
+                        "checkroom",
+                        "admin:catalog_product_changelist",
+                        "catalog.view_product",
+                    ),
+                    _nav(
+                        "Categories",
+                        "category",
+                        "admin:catalog_category_changelist",
+                        "catalog.view_category",
+                    ),
+                    _nav(
+                        "Collections",
+                        "collections_bookmark",
+                        "admin:catalog_collection_changelist",
+                        "catalog.view_collection",
+                    ),
+                ],
+            },
+            {
+                "title": "Lookups",
+                "collapsible": True,
+                "items": [
+                    _nav(
+                        "Tags",
+                        "sell",
+                        "admin:catalog_tag_changelist",
+                        "catalog.view_tag",
+                    ),
+                    _nav(
+                        "Sizes",
+                        "straighten",
+                        "admin:catalog_size_changelist",
+                        "catalog.view_size",
+                    ),
+                    _nav(
+                        "Colors",
+                        "palette",
+                        "admin:catalog_color_changelist",
+                        "catalog.view_color",
+                    ),
+                ],
+            },
+            {
+                "title": "Customers",
+                "items": [
+                    _nav(
+                        "Users",
+                        "person",
+                        "admin:accounts_user_changelist",
+                        "accounts.view_user",
+                    ),
+                    _nav(
+                        "Favorites",
+                        "favorite",
+                        "admin:catalog_favorite_changelist",
+                        "catalog.view_favorite",
+                    ),
+                    _nav(
+                        "Groups",
+                        "group",
+                        "admin:auth_group_changelist",
+                        "auth.view_group",
+                    ),
+                ],
+            },
+            {
+                "title": "Store",
+                "items": [
+                    _nav(
+                        "Site settings",
+                        "settings",
+                        "admin:store_sitesettings_changelist",
+                        "store.view_sitesettings",
+                    ),
+                ],
+            },
+        ],
+    },
+}
 
 # Frontend cache revalidation webhook (disabled when the URL is unset).
 FRONTEND_REVALIDATE_URL = env.str("FRONTEND_REVALIDATE_URL", default="")

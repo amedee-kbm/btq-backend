@@ -22,8 +22,7 @@ from django.urls import path
 
 from api.api import api
 
-admin.site.site_header = "Btq. admin"
-admin.site.site_title = "Btq. admin"
+# Site header and title live in settings.UNFOLD.
 admin.site.index_title = "Manage the store"
 
 urlpatterns = [path("admin/", admin.site.urls), path("api/", api.urls)]
