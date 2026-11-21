@@ -1,4 +1,5 @@
 from django import forms
+from django.forms.models import BaseInlineFormSet
 from unfold.widgets import (
     UnfoldAdminCheckboxSelectMultipleWidget,
     UnfoldAdminImageSmallFieldWidget,
@@ -59,6 +60,7 @@ class ProductAdminForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = "__all__"
+        help_texts = {"slug": "Leave blank to auto-generate."}
 
     def clean(self):
         cleaned = super().clean()
@@ -68,3 +70,22 @@ class ProductAdminForm(forms.ModelForm):
         if colors and not sizes:
             self.add_error("variant_sizes", "Pick at least one size.")
         return cleaned
+
+
+class ProductImageFormSet(BaseInlineFormSet):
+    """A product needs at least one photo: kept inline rows or new uploads."""
+
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+        kept = [
+            f
+            for f in self.forms
+            if f.cleaned_data
+            and not f.cleaned_data.get("DELETE")
+            and f.cleaned_data.get("image")
+        ]
+        uploads = self.files.getlist("new_photos") if self.files else []
+        if not kept and not uploads:
+            raise forms.ValidationError("Add at least one photo.")

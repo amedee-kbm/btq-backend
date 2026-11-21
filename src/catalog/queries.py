@@ -1,6 +1,6 @@
 """Published-product querysets and the /products filters (ARCHITECTURE.md §4.2)."""
 
-from django.db.models import Exists, OuterRef, Prefetch, Q
+from django.db.models import Exists, F, OuterRef, Prefetch, Q
 from django.db.models.functions import Coalesce
 
 from .models import Category, Product, ProductImage, Variant
@@ -8,19 +8,25 @@ from .schemas import ProductFilters
 
 SORTS = {
     "newest": "-created_at",
-    "price_asc": "effective_price",
-    "price_desc": "-effective_price",
+    # Unpriced products go last either way.
+    "price_asc": F("effective_price").asc(nulls_last=True),
+    "price_desc": F("effective_price").desc(nulls_last=True),
 }
 
 
 def published_products():
     """Every public product query starts here: published only, with the
     `effective_price` and `in_stock` annotations the filters and sorts use."""
-    available = Variant.objects.filter(product=OuterRef("pk"), is_available=True)
     return Product.objects.filter(is_published=True).annotate(
         effective_price=Coalesce("sale_price", "price"),
-        in_stock=Exists(available),
+        in_stock=in_stock(),
     )
+
+
+def in_stock():
+    """Has an available variant, or has no variants at all (stock not tracked)."""
+    variants = Variant.objects.filter(product=OuterRef("pk"))
+    return Exists(variants.filter(is_available=True)) | ~Exists(variants)
 
 
 def with_card_data(qs, all_images=False):

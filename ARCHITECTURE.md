@@ -58,11 +58,15 @@ Existing (✅) — see `src/catalog/models.py`:
 - **Tag** — occasion/style: `name`, `slug`.
 - **Size** — managed list (`XS…XL`, `36`, `Free size`), ordered by `position`.
 - **Color** — `name` (unique), optional `hex_code`.
-- **Product** — `name`, `slug`, `code` (e.g. `BQ-0142`, unique, customer-quotable),
-  `description`, `material`, `fit_note`, `price` / `sale_price` (whole RWF; DB constraint
-  `sale_price < price`), M2M `categories`, M2M `tags`, `is_published`, timestamps.
-  - *Sold out* = no variant with `is_available=True`.
-  - *Effective price* = `sale_price` if set, else `price`.
+- **Product** — catalog-first: only **≥1 image** and **≥1 category** are required (enforced in
+  the admin). Everything else is optional: `name` (may be `""`), `slug` and `code` (auto-filled
+  on save as `md-0142` / `MD-0142` when blank), `description`, `material`, `fit_note`,
+  `price` / `sale_price` (whole RWF, both nullable; DB constraint `sale_price < price`),
+  M2M `tags`, variants. `is_published` defaults to true. Timestamps.
+  - *Sold out* = has variants and none is `is_available=True` (no variants = not tracked,
+    never sold out).
+  - *Effective price* = `sale_price` if set, else `price`; `null` when unpriced. Price sorts
+    put unpriced products last.
 - **Variant** — one `size` × one `color` of a product, `is_available` flag (no stock counts).
 - **ProductImage** — `image`, optional `color` (null = shared/collage photo), `alt_text`,
   `position`.

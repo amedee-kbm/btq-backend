@@ -1,13 +1,13 @@
 import itertools
 
 from django.contrib import admin
-from django.db.models import Count, Exists, F, Max, OuterRef
+from django.db.models import Count, F, Max
 from django.db.models.functions import Coalesce
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
 from . import revalidate
-from .forms import ProductAdminForm
+from .forms import ProductAdminForm, ProductImageFormSet
 from .models import (
     Category,
     Collection,
@@ -20,6 +20,7 @@ from .models import (
     Tag,
     Variant,
 )
+from .queries import in_stock
 
 
 def thumbnail(image, size):
@@ -46,10 +47,6 @@ def plain_select(formfield, label):
     return formfield
 
 
-def available_variants():
-    return Variant.objects.filter(product=OuterRef("pk"), is_available=True)
-
-
 # --- Product ---------------------------------------------------------------
 
 
@@ -69,7 +66,7 @@ class OnSaleFilter(admin.SimpleListFilter):
 
 
 class SoldOutFilter(admin.SimpleListFilter):
-    """Sold out = no available variant (same rule as Product.is_sold_out)."""
+    """Same rule as Product.is_sold_out: has variants, none available."""
 
     title = "sold out"
     parameter_name = "sold_out"
@@ -79,9 +76,9 @@ class SoldOutFilter(admin.SimpleListFilter):
 
     def queryset(self, request, queryset):
         if self.value() == "yes":
-            return queryset.filter(~Exists(available_variants()))
+            return queryset.filter(~in_stock())
         if self.value() == "no":
-            return queryset.filter(Exists(available_variants()))
+            return queryset.filter(in_stock())
         return queryset
 
 
@@ -107,6 +104,7 @@ class ProductImageInline(StackedInline):
     """
 
     model = ProductImage
+    formset = ProductImageFormSet
     extra = 0
     fields = ["image", "color", "alt_text", "position"]
     ordering_field = "position"
@@ -161,7 +159,7 @@ class ProductAdmin(ModelAdmin):
         return (
             super()
             .get_queryset(request)
-            .annotate(has_available_variant=Exists(available_variants()))
+            .annotate(has_stock=in_stock())
             .prefetch_related("images")
         )
 
@@ -211,11 +209,9 @@ class ProductAdmin(ModelAdmin):
         first = next(iter(obj.images.all()), None)
         return thumbnail(first.image if first else None, 48)
 
-    @admin.display(
-        description="Sold out", boolean=True, ordering="has_available_variant"
-    )
+    @admin.display(description="Sold out", boolean=True, ordering="has_stock")
     def sold_out(self, obj):
-        return not obj.has_available_variant
+        return not obj.has_stock
 
     @admin.action(description="Publish selected products")
     def publish(self, request, queryset):

@@ -21,9 +21,9 @@ class ProductListItem(Schema):
     slug: str
     code: str
     name: str
-    price: int
+    price: Optional[int]
     sale_price: Optional[int]
-    effective_price: int
+    effective_price: Optional[int]
     is_on_sale: bool
     is_sold_out: bool
     images: list[ImageOut]

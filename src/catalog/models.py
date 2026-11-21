@@ -1,8 +1,13 @@
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import F, Q
+from django.utils.text import slugify
+
+CODE_PREFIX = "MD"
 
 
 class Category(models.Model):
@@ -88,12 +93,18 @@ class Color(models.Model):
 
 
 class Product(models.Model):
-    name = models.CharField(max_length=200)
-    slug = models.SlugField(unique=True)
+    """Only a photo and a category are required; everything else is optional.
+
+    code and slug fill themselves in on save when left blank.
+    """
+
+    name = models.CharField(max_length=200, blank=True)
+    slug = models.SlugField(unique=True, blank=True)
     code = models.CharField(
         max_length=20,
         unique=True,
-        help_text="Short code customers can quote, e.g. BQ-0142",
+        blank=True,
+        help_text="Short code customers can quote, e.g. MD-0142. Leave blank to auto-generate.",
     )
     description = models.TextField(blank=True)
     material = models.CharField(max_length=150, blank=True)
@@ -102,13 +113,13 @@ class Product(models.Model):
     )
 
     # Whole RWF, no decimals.
-    price = models.PositiveIntegerField()
+    price = models.PositiveIntegerField(null=True, blank=True)
     sale_price = models.PositiveIntegerField(null=True, blank=True)
 
-    categories = models.ManyToManyField(Category, related_name="products", blank=True)
+    categories = models.ManyToManyField(Category, related_name="products")
     tags = models.ManyToManyField(Tag, related_name="products", blank=True)
 
-    is_published = models.BooleanField(default=False)
+    is_published = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -116,13 +127,29 @@ class Product(models.Model):
         ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
-                condition=Q(sale_price__isnull=True) | Q(sale_price__lt=F("price")),
+                condition=Q(sale_price__isnull=True)
+                | Q(price__isnull=False, sale_price__lt=F("price")),
                 name="product_sale_price_lt_price",
             )
         ]
 
     def __str__(self):
-        return f"{self.code} - {self.name}"
+        return f"{self.code} - {self.name}" if self.name else self.code
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            # The code is built from the pk, so insert under a placeholder first.
+            slug = self.slug
+            self.code = f"tmp-{uuid.uuid4().hex[:12]}"
+            self.slug = slug or self.code
+            super().save(*args, **kwargs)
+            self.code = f"{CODE_PREFIX}-{self.pk:04d}"
+            self.slug = slug
+            kwargs = {"update_fields": ["code", "slug"]}
+        if not self.slug:
+            base = f"{slugify(self.name)}-" if self.name else ""
+            self.slug = f"{base}{self.code}".lower()
+        super().save(*args, **kwargs)
 
     @property
     def is_on_sale(self):
@@ -130,7 +157,11 @@ class Product(models.Model):
 
     @property
     def is_sold_out(self):
-        return not self.variants.filter(is_available=True).exists()
+        # No variants at all = not tracked, so not sold out.
+        return (
+            self.variants.exists()
+            and not self.variants.filter(is_available=True).exists()
+        )
 
 
 class Variant(models.Model):
