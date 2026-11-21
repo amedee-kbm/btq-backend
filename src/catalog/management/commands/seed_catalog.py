@@ -270,8 +270,12 @@ class Command(BaseCommand):
         product = Product.objects.create(is_published=True)
         product.categories.set(filter(None, [category, category.parent]))
         image = ProductImage(product=product, position=0)
+        storage = image.image.storage
+        # Left over from a run whose DB write was lost; no row uses it.
+        if storage.exists(upload_name):
+            storage.delete(upload_name)
         # The storage path is the resume key, so it must come out exactly.
-        image.image.name = image.image.storage.save(
+        image.image.name = storage.save(
             upload_name, ContentFile(web_jpeg(photo))
         )
         if image.image.name != upload_name:

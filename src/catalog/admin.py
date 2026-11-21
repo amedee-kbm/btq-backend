@@ -7,7 +7,7 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
 from . import revalidate
-from .forms import ProductAdminForm, ProductImageFormSet
+from .forms import CategoryAdminForm, ProductAdminForm, ProductImageFormSet
 from .models import (
     Category,
     Collection,
@@ -249,6 +249,11 @@ class ProductAdmin(ModelAdmin):
 
 @admin.register(Category)
 class CategoryAdmin(ModelAdmin):
+    form = CategoryAdminForm
+    fieldsets = [
+        (None, {"fields": ["name", "slug", "parent", "show_on_home", "position"]}),
+        ("Cover", {"fields": ["cover_image", "cover_from_products"]}),
+    ]
     list_display = [
         "__str__",
         "parent",

@@ -1,12 +1,13 @@
 from django import forms
 from django.forms.models import BaseInlineFormSet
+from django.utils.html import format_html, format_html_join
 from unfold.widgets import (
     UnfoldAdminCheckboxSelectMultipleWidget,
     UnfoldAdminImageSmallFieldWidget,
     UnfoldAdminSelectWidget,
 )
 
-from .models import Color, Product, Size
+from .models import Category, Color, Product, ProductImage, Size
 
 
 class MultipleImageInput(UnfoldAdminImageSmallFieldWidget):
@@ -89,3 +90,71 @@ class ProductImageFormSet(BaseInlineFormSet):
         uploads = self.files.getlist("new_photos") if self.files else []
         if not kept and not uploads:
             raise forms.ValidationError("Add at least one photo.")
+
+
+class CoverPickerWidget(forms.RadioSelect):
+    """Product photos as a grid of clickable thumbnails; choices are
+    (storage name, url) pairs."""
+
+    def render(self, name, value, attrs=None, renderer=None):
+        if not self.choices:
+            return format_html(
+                '<p class="cover-picker-empty">No product photos in this category yet.</p>'
+            )
+        tiles = format_html_join(
+            "",
+            '<label class="cover-picker-tile">'
+            '<input type="radio" name="{}" value="{}"{}>'
+            '<img src="{}" loading="lazy" alt="">'
+            "</label>",
+            (
+                (name, key, " checked" if key == value else "", url)
+                for key, url in self.choices
+            ),
+        )
+        return format_html('<div class="cover-picker">{}</div>', tiles)
+
+
+class CategoryAdminForm(forms.ModelForm):
+    """Adds a picker to reuse one of the category's product photos as its cover."""
+
+    cover_from_products = forms.ChoiceField(
+        required=False,
+        label="Choose from product photos",
+        help_text="Click a photo to make it the cover. Uses the same file; nothing is uploaded.",
+        widget=CoverPickerWidget,
+    )
+
+    class Meta:
+        model = Category
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        field = self.fields["cover_from_products"]
+        if not self.instance.pk:
+            field.help_text = (
+                "Save the category first; its product photos show up here."
+            )
+            return
+        # Products of a parent category are also linked to the parent, so
+        # this covers subcategories too.
+        images = (
+            ProductImage.objects.filter(product__categories=self.instance)
+            .order_by("-product__created_at", "position")
+            .distinct()
+        )
+        seen, choices = set(), []
+        for image in images:
+            if image.image.name not in seen:
+                seen.add(image.image.name)
+                choices.append((image.image.name, image.image.url))
+        field.choices = choices
+        field.initial = self.instance.cover_image.name or None
+
+    def save(self, commit=True):
+        chosen = self.cleaned_data.get("cover_from_products")
+        # A freshly uploaded cover file wins over a picked photo.
+        if chosen and "cover_image" not in self.changed_data:
+            self.instance.cover_image.name = chosen
+        return super().save(commit)
